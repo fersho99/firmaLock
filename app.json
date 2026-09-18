@@ -7,9 +7,14 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "FirmaLock usa Face ID para confirmar tu identidad antes de firmar un documento."
+      }
     },
     "android": {
+      "package": "com.fernando.firmalock",
+      "permissions": ["USE_BIOMETRIC", "USE_FINGERPRINT"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -20,6 +25,15 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "FirmaLock usa Face ID para confirmar tu identidad antes de firmar un documento."
+        }
+      ]
+    ]
   }
 }
