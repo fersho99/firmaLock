@@ -98,11 +98,7 @@
     var box = document.getElementById('placementBox');
     var statusEl = document.getElementById('status');
 
-    // Posición del recuadro en coordenadas de pantalla (client px). Se
-    // guarda como el punto "inferior-centro" (donde tocaste), igual que
-    // antes usaba el marcador, para que al confirmar el ancla siga siendo
-    // consistente con cómo pdfSign.ts centra la imagen horizontalmente y la
-    // hace crecer hacia arriba desde el punto tocado.
+    // Posición del recuadro en coordenadas de pantalla (client px), como punto inferior-centro.
     var boxAnchorX = 0;
     var boxAnchorY = 0;
     var boxWidthPx = 0;
@@ -222,17 +218,22 @@
     box.addEventListener('pointercancel', endDrag);
 
     onRNMessage(function (evt) {
+      // No todo 'message' que llega aquí viene de RN: el propio motor del
+      // WebView a veces dispara eventos 'message' internos que no son
+      // JSON. Se ignoran en silencio en vez de reportarlos como error.
+      var msg;
       try {
-        var msg = JSON.parse(evt.data);
-        if (msg.type === 'load') {
-          loadDocument(msg.base64, msg.page);
-        } else if (msg.type === 'goToPage') {
-          renderPage(msg.page);
-        } else if (msg.type === 'hideBox') {
-          hideBox();
-        }
+        msg = JSON.parse(evt.data);
       } catch (e) {
-        postToRN({ type: 'error', message: String(e) });
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'load') {
+        loadDocument(msg.base64, msg.page);
+      } else if (msg.type === 'goToPage') {
+        renderPage(msg.page);
+      } else if (msg.type === 'hideBox') {
+        hideBox();
       }
     });
 

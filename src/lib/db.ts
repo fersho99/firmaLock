@@ -61,6 +61,16 @@ export async function markSigned(id: string, signedUri: string): Promise<void> {
   );
 }
 
+/** Revierte un documento a su versión sin firmar (el original nunca se borra al firmar). */
+export async function markUnsigned(id: string, originalUri: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE documents SET uri = ?, status = 'pendiente', signedAt = NULL WHERE id = ?;`,
+    originalUri,
+    id
+  );
+}
+
 export async function listDocuments(): Promise<DocumentItem[]> {
   const db = await getDb();
   return db.getAllAsync<DocumentItem>(`SELECT * FROM documents ORDER BY createdAt DESC;`);

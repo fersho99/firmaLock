@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #F6F2FB;
+      min-height: 100%;
+    }
+    #status {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      color: #7A6E8C;
+      font-family: sans-serif;
+      font-size: 11px;
+      z-index: 10;
+    }
+    /* docx-preview renderiza cada página como un div .docx dentro del
+       contenedor; con ignoreWidth activado no fuerza el ancho de página de
+       Word, así que se ajusta al ancho de la pantalla. Le damos un poco de
+       "look" de hoja de papel (fondo blanco, sombra, margen) para que se
+       sienta como el documento real y no como texto plano. */
+    #docContainer {
+      padding: 10px;
+    }
+    #docContainer .docx {
+      background: #fff;
+      box-shadow: 0 1px 6px rgba(36, 27, 51, 0.25);
+      border-radius: 4px;
+      padding: 24px !important;
+      margin-bottom: 16px;
+      color: #241B33;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Cargando…</div>
+  <div id="docContainer"></div>
+
+  <script src="jszip.min.js"></script>
+  <script src="docx-preview.min.js"></script>
+  <script>
+    function onRNMessage(handler) {
+      document.addEventListener('message', handler);
+      window.addEventListener('message', handler);
+    }
+    function postToRN(obj) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify(obj));
+      }
+    }
+
+    function base64ToUint8Array(base64) {
+      var raw = atob(base64);
+      var arr = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+      return arr;
+    }
+
+    var container = document.getElementById('docContainer');
+    var statusEl = document.getElementById('status');
+
+    function loadDocument(base64) {
+      statusEl.style.display = 'block';
+      statusEl.textContent = 'Cargando…';
+      container.innerHTML = '';
+      try {
+        var bytes = base64ToUint8Array(base64);
+        window.docx
+          .renderAsync(bytes, container, container, {
+            className: 'docx',
+            inWrapper: true,
+            ignoreWidth: true,
+            ignoreHeight: true,
+            ignoreFonts: false,
+            breakPages: false,
+            experimental: true,
+            useBase64URL: true,
+          })
+          .then(function () {
+            statusEl.style.display = 'none';
+            postToRN({ type: 'rendered' });
+          })
+          .catch(function (err) {
+            statusEl.style.display = 'none';
+            postToRN({ type: 'error', message: String(err) });
+          });
+      } catch (e) {
+        statusEl.style.display = 'none';
+        postToRN({ type: 'error', message: String(e) });
+      }
+    }
+
+    onRNMessage(function (evt) {
+      // No todo 'message' que llega aquí viene de RN: el propio motor del
+      // WebView a veces dispara eventos 'message' internos (p. ej. un
+      // polyfill de setImmediate) que no son JSON. Si no es un objeto con
+      // 'type' reconocible, se ignora en silencio en vez de reportarlo como
+      // error — antes eso hacía aparecer un error falso sobre la vista
+      // previa aunque el documento se hubiera renderizado bien.
+      var msg;
+      try {
+        msg = JSON.parse(evt.data);
+      } catch (e) {
+        return;
+      }
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'load') {
+        loadDocument(msg.base64);
+      }
+    });
+
+    postToRN({ type: 'ready' });
+  </script>
+</body>
+</html>

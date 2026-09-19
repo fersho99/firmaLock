@@ -23,17 +23,12 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
   const [penColor, setPenColor] = useState(PEN_COLORS[0].value);
 
   const handlePickColor = (color: string) => {
-    // Cambiar de color mientras hay trazo dibujado reinicia el pad: la
-    // librería no permite recolorear un trazo ya hecho, así que evitamos
-    // confusión borrando y avisando en vez de mezclar colores a medias.
+    // La librería no permite recolorear un trazo ya hecho, así que se reinicia el pad.
     padRef.current?.clearSignature();
     setPenColor(color);
   };
 
-  // Con tinta blanca, un fondo claro hace desaparecer el trazo mientras se
-  // dibuja (aunque el PNG se exporte transparente, no se vería nada en
-  // pantalla). Si se elige blanco, oscurecemos el fondo visible del pad
-  // solo para que se pueda ver lo que se está firmando.
+  // Con tinta blanca sobre fondo claro el trazo no se ve mientras se dibuja.
   const isWhitePen = penColor === "#FFFFFF";
   const padVisibleBg = isWhitePen ? "#1A1A1A" : "#F5F5F5";
 
@@ -74,9 +69,6 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
             autoClear={false}
             descriptionText=""
             webStyle={getSignaturePadWebStyle(padVisibleBg)}
-            // Fondo transparente: el trazo se exporta sin ningún rectángulo
-            // de color detrás, así se ve bien sobre cualquier documento sin
-            // importar si la página es clara u oscura.
             backgroundColor="transparent"
             penColor={penColor}
             minWidth={2.5}
@@ -84,8 +76,7 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
           />
         </View>
 
-        {/* Botones nativos de RN, no los del footer HTML del componente
-            (esos a veces no se ven bien dentro del WebView en un Modal). */}
+        {/* Botones nativos: el footer HTML del componente no se ve bien en un Modal. */}
         <View style={styles.actionsRow}>
           <Pressable
             style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
@@ -109,15 +100,7 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
   );
 }
 
-// Ocultamos el footer HTML propio del componente (sus botones "Clear"/"Confirm")
-// porque dentro de un WebView, en un Modal, a veces quedan recortados o
-// invisibles; los reemplazamos por los botones nativos de arriba, que llaman
-// a los mismos métodos (clearSignature / readSignature) por referencia.
-// El fondo visible del body cambia según el color de tinta (ver padVisibleBg
-// arriba): claro para tintas oscuras, oscuro para tinta blanca. Esto es solo
-// visual dentro del WebView — el PNG que se exporta sigue siendo transparente
-// (backgroundColor="transparent" en el SignatureCanvas), así que no afecta
-// cómo se ve la firma ya estampada en el documento.
+// Oculta el footer HTML propio del componente (se reemplaza por los botones nativos de arriba).
 function getSignaturePadWebStyle(bgColor: string) {
   return `
     .m-signature-pad { box-shadow: none; border: none; margin: 0; }

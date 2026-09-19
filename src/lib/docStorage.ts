@@ -61,6 +61,13 @@ export async function pickAndImportDocument(): Promise<DocumentItem | null> {
   return item;
 }
 
+/** Archivo original (sin firmar) de un documento, tal como se importó. */
+export function getOriginalFile(item: { id: string; type: DocType }): File {
+  const vaultDir = getVaultDir();
+  const ext = item.type === "pdf" ? "pdf" : "docx";
+  return new File(vaultDir, `${item.id}.${ext}`);
+}
+
 export function saveSignedCopy(
   original: { id: string; type: DocType },
   bytes: Uint8Array

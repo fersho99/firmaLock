@@ -8,8 +8,8 @@ import { authenticate } from "../lib/biometrics";
 import { withRelockPaused } from "../lib/relockGuard";
 import { embedSignatureInPdf, type SignaturePlacement } from "../lib/pdfSign";
 import { ensurePdfjsRuntime } from "../lib/pdfjsRuntime";
-import { markSigned, type DocumentItem } from "../lib/db";
-import { saveSignedCopy } from "../lib/docStorage";
+import { markSigned, markUnsigned, type DocumentItem } from "../lib/db";
+import { saveSignedCopy, getOriginalFile, deleteDocumentFile } from "../lib/docStorage";
 import SignaturePadModal from "../components/SignaturePadModal";
 import { COLORS } from "../theme";
 
@@ -135,13 +135,67 @@ export default function PdfSignScreen({ document: doc, onClose, onSignedUpdate }
     [pendingPlacement, currentDoc, onSignedUpdate, loadCurrentFile]
   );
 
+  const removeSignature = useCallback(() => {
+    Alert.alert(
+      "Quitar firma",
+      "Se eliminará la firma y el documento volverá a su versión original, sin firmar.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Quitar firma",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true);
+            try {
+              const original = getOriginalFile(currentDoc);
+              const signedUri = currentDoc.uri;
+              await markUnsigned(currentDoc.id, original.uri);
+              if (signedUri !== original.uri) {
+                deleteDocumentFile(signedUri);
+              }
+              const updated: DocumentItem = {
+                ...currentDoc,
+                uri: original.uri,
+                status: "pendiente",
+                signedAt: null,
+              };
+              setCurrentDoc(updated);
+              onSignedUpdate(updated);
+              setPendingPlacement(null);
+              sendToWeb({ type: "hideBox" });
+              await loadCurrentFile(original.uri, 1);
+            } catch (e) {
+              Alert.alert("No se pudo quitar la firma", String(e));
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [currentDoc, onSignedUpdate, sendToWeb, loadCurrentFile]);
+
   const handleShare = useCallback(async () => {
     if (!(await Sharing.isAvailableAsync())) {
       Alert.alert("No disponible", "Compartir no está disponible en este dispositivo.");
       return;
     }
+    if (currentDoc.status !== "firmado") {
+      Alert.alert(
+        "Documento sin firmar",
+        "Este documento todavía no tiene tu firma. ¿Seguro que quieres compartirlo así?",
+        [
+          { text: "Cancelar", style: "cancel" },
+          {
+            text: "Compartir de todos modos",
+            onPress: () => withRelockPaused(() => Sharing.shareAsync(currentDoc.uri)),
+          },
+        ]
+      );
+      return;
+    }
     await withRelockPaused(() => Sharing.shareAsync(currentDoc.uri));
-  }, [currentDoc.uri]);
+  }, [currentDoc.uri, currentDoc.status]);
 
   const goToPage = useCallback(
     (delta: number) => {
@@ -172,6 +226,12 @@ export default function PdfSignScreen({ document: doc, onClose, onSignedUpdate }
           ? "Arrastra el recuadro morado para ajustar la posición exacta de la firma."
           : "Toca el punto del documento donde quieres colocar tu firma."}
       </Text>
+
+      {currentDoc.status === "firmado" ? (
+        <Pressable onPress={removeSignature} disabled={busy} style={styles.removeSignatureButton}>
+          <Text style={styles.removeSignatureText}>Quitar firma</Text>
+        </Pressable>
+      ) : null}
 
       <View style={styles.webviewWrap}>
         {viewerUri ? (
@@ -253,6 +313,16 @@ const styles = StyleSheet.create({
   title: { color: COLORS.ink, fontSize: 14, fontWeight: "700", flex: 1, marginHorizontal: 10, textAlign: "center" },
   shareText: { color: COLORS.accent, fontSize: 14, fontWeight: "700" },
   helper: { color: COLORS.inkMuted, fontSize: 12, marginTop: 8, marginBottom: 8, textAlign: "center" },
+  removeSignatureButton: {
+    alignSelf: "center",
+    marginBottom: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+  },
+  removeSignatureText: { color: COLORS.danger, fontSize: 12, fontWeight: "700" },
   webviewWrap: {
     flex: 1,
     borderRadius: 12,

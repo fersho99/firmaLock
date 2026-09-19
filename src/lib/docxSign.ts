@@ -7,18 +7,17 @@ const SIGNATURE_WIDTH_IN = 2.2;
 const SIGNATURE_HEIGHT_IN = 0.9;
 
 /**
- * A diferencia del PDF (donde se puede colocar la firma en un punto exacto
- * de la página gracias a pdf.js + pdf-lib), editar un .docx a nivel de
- * posición libre requeriría un motor de layout completo. Por alcance de
- * este proyecto, la firma de un .docx se agrega como un bloque de cierre al
- * final del documento (imagen de la firma + "Firmado por / fecha"),
- * manipulando directamente el XML del paquete OOXML (word/document.xml)
- * dentro del .docx, que en el fondo es un .zip.
+ * Un .docx no tiene coordenadas fijas de página (se re-fluye), así que el
+ * usuario elige después de qué párrafo va la firma en vez de un punto exacto.
+ * El bloque de firma (imagen + "Firmado por / fecha") se inserta ahí,
+ * manipulando directamente word/document.xml dentro del paquete OOXML. Sin
+ * párrafo indicado, se agrega al final del documento.
  */
 export async function appendSignatureToDocx(
   docxFile: File,
   signaturePngBase64: string,
-  signerName: string
+  signerName: string,
+  targetParagraphIndex?: number | null
 ): Promise<Uint8Array> {
   const docxBytes = await docxFile.arrayBuffer();
   const zip = await JSZip.loadAsync(docxBytes);
@@ -31,13 +30,12 @@ export async function appendSignatureToDocx(
   const relsXml = await requireText(zip, relsPath);
   const contentTypesXml = await requireText(zip, contentTypesPath);
 
-  // 1) Agrega la imagen PNG de la firma al paquete.
+  // Agrega la imagen de la firma al paquete y registra la relación imagen -> id.
   const pngBytes = toByteArray(
     signaturePngBase64.replace(/^data:image\/png;base64,/, "")
   );
   zip.file("word/media/firmalock_signature.png", pngBytes);
 
-  // 2) Registra la relación imagen -> id, evitando colisionar con ids existentes.
   const usedIds = Array.from(relsXml.matchAll(/Id="rId(\d+)"/g)).map((m) =>
     parseInt(m[1], 10)
   );
@@ -50,7 +48,7 @@ export async function appendSignatureToDocx(
   );
   zip.file(relsPath, updatedRelsXml);
 
-  // 3) Asegura que [Content_Types].xml declare la extensión png.
+  // Asegura que [Content_Types].xml declare la extensión png.
   let updatedContentTypesXml = contentTypesXml;
   if (!/Extension="png"/i.test(contentTypesXml)) {
     updatedContentTypesXml = contentTypesXml.replace(
@@ -60,30 +58,44 @@ export async function appendSignatureToDocx(
   }
   zip.file(contentTypesPath, updatedContentTypesXml);
 
-  // 4) Construye el bloque XML (imagen + texto) e insértalo justo antes de
-  // <w:sectPr> (el cierre de sección debe seguir siendo el último hijo del
-  // body para que el documento siga siendo válido).
+  // Construye el bloque XML (imagen + texto) y decide dónde insertarlo.
   const cx = Math.round(SIGNATURE_WIDTH_IN * EMU_PER_INCH);
   const cy = Math.round(SIGNATURE_HEIGHT_IN * EMU_PER_INCH);
   const dateLabel = new Date().toLocaleString();
   const signatureBlock = buildSignatureParagraphs(relId, cx, cy, signerName, dateLabel);
 
+  // Posición por defecto: justo antes de <w:sectPr> (el cierre de sección
+  // debe seguir siendo el último hijo del body), o antes de </w:body> si el
+  // documento no tiene sectPr explícito.
   const sectPrIndex = documentXml.lastIndexOf("<w:sectPr");
-  let updatedDocumentXml: string;
-  if (sectPrIndex !== -1) {
-    updatedDocumentXml =
-      documentXml.slice(0, sectPrIndex) +
-      signatureBlock +
-      documentXml.slice(sectPrIndex);
-  } else {
-    updatedDocumentXml = documentXml.replace(
-      "</w:body>",
-      `${signatureBlock}</w:body>`
-    );
+  const endOfBodyPos = sectPrIndex !== -1 ? sectPrIndex : documentXml.indexOf("</w:body>");
+
+  let insertPos = endOfBodyPos;
+  if (typeof targetParagraphIndex === "number" && targetParagraphIndex >= 0) {
+    // Mismo criterio de partición que extractDocxParagraphs (docxRead.ts).
+    const paragraphStarts = findParagraphStarts(documentXml);
+    const nextParagraphIndex = targetParagraphIndex + 1;
+    if (nextParagraphIndex < paragraphStarts.length) {
+      insertPos = paragraphStarts[nextParagraphIndex];
+    }
   }
+
+  const updatedDocumentXml =
+    documentXml.slice(0, insertPos) + signatureBlock + documentXml.slice(insertPos);
   zip.file(documentXmlPath, updatedDocumentXml);
 
   return zip.generateAsync({ type: "uint8array" });
+}
+
+/** Offset de cada apertura de párrafo (<w:p> o <w:p ...>) dentro de documentXml. */
+function findParagraphStarts(documentXml: string): number[] {
+  const regex = /<w:p[ >]/g;
+  const starts: number[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(documentXml))) {
+    starts.push(match.index);
+  }
+  return starts;
 }
 
 async function requireText(zip: JSZip, path: string): Promise<string> {
