@@ -1,3 +1,7 @@
+// Evita que la app se re-bloquee cuando ES ELLA MISMA la que abre un diálogo
+// del sistema (permisos, selector de archivos, etc.), ya que eso dispara
+// brevemente AppState -> "background"/"inactive" y no debe interpretarse
+// como que el usuario salió de la app.
 let pauseCount = 0;
 
 export function isRelockPaused(): boolean {

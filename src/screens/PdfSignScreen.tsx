@@ -168,7 +168,9 @@ export default function PdfSignScreen({ document: doc, onClose, onSignedUpdate }
       <Text style={styles.helper}>
         {currentDoc.status === "firmado"
           ? "Documento firmado. Toca de nuevo para agregar otra firma si lo necesitas."
-          : "Toca el punto exacto del documento donde quieres colocar tu firma."}
+          : pendingPlacement
+          ? "Arrastra el recuadro morado para ajustar la posición exacta de la firma."
+          : "Toca el punto del documento donde quieres colocar tu firma."}
       </Text>
 
       <View style={styles.webviewWrap}>
@@ -212,10 +214,16 @@ export default function PdfSignScreen({ document: doc, onClose, onSignedUpdate }
       {pendingPlacement ? (
         <View style={styles.confirmBar}>
           <Text style={styles.confirmText}>
-            Punto seleccionado en página {pendingPlacement.page}.
+            Recuadro en página {pendingPlacement.page}. Arrástralo si necesitas ajustarlo.
           </Text>
           <View style={{ flexDirection: "row", gap: 10 }}>
-            <Pressable style={styles.confirmCancel} onPress={() => setPendingPlacement(null)}>
+            <Pressable
+              style={styles.confirmCancel}
+              onPress={() => {
+                setPendingPlacement(null);
+                sendToWeb({ type: "hideBox" });
+              }}
+            >
               <Text style={styles.confirmCancelText}>Cancelar</Text>
             </Pressable>
             <Pressable style={styles.confirmButton} onPress={confirmPlacement}>

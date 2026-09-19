@@ -1,13 +1,16 @@
+// Identidad "blanco + morado", votada por el equipo para la presentación
+// escolar. Prioriza la identidad de marca elegida por el equipo sobre
+// contraste/legibilidad "ideal" — es un proyecto académico, no producción.
 export const COLORS = {
-  bg: "#14171A",
-  panel: "#1C2024",
-  panelBorder: "#2A2F35",
-  rule: "#2A2F35",
-  ink: "#EDEFF1",
-  inkMuted: "#8B9198",
-  accent: "#2FA876",
-  accentDim: "#1E3A2E",
+  bg: "#FFFFFF",
+  panel: "#F6F2FB",
+  panelBorder: "#DCCBF0",
+  rule: "#DCCBF0",
+  ink: "#241B33",
+  inkMuted: "#7A6E8C",
+  accent: "#7C3AED",
+  accentDim: "#EDE3FB",
   gold: "#D9A441",
-  success: "#2FA876",
-  danger: "#E5484D",
+  success: "#16A34A",
+  danger: "#DC2626",
 };

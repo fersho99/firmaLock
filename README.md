@@ -1,72 +1,73 @@
 # FirmaLock
 
-Aplicación móvil (Expo / React Native) para firmar documentos PDF y DOCX de forma local, protegida con autenticación biométrica (huella / Face ID).
+Aplicación móvil de firma electrónica con verificación biométrica. Permite importar un documento PDF o Word (.docx), visualizarlo dentro de la app y, antes de estampar la firma, solicita huella dactilar o Face ID para confirmar la identidad del usuario.
+
+## Alcance
+
+- Firma **dibujada a mano** (no es firma digital criptográfica con certificado).
+- **PDF**: visor completo basado en pdf.js dentro de un WebView. El usuario toca el punto exacto de la página donde desea la firma, confirma con biometría, dibuja su firma y esta se estampa en esa posición usando `pdf-lib`, con coordenadas reales del PDF.
+- **DOCX**: se muestra el texto extraído del documento (solo lectura, sin formato enriquecido) y la firma se agrega como bloque de cierre al final (imagen de la firma + "Firmado por / fecha"), manipulando directamente el paquete OOXML del `.docx`. Colocar la firma en un punto arbitrario del documento requeriría un motor de layout completo, fuera del alcance de este proyecto.
 
 ## Requisitos
 
-- [Node.js](https://nodejs.org/) 20 o superior
-- npm (incluido con Node.js)
-- [Expo CLI](https://docs.expo.dev/get-started/installation/) (se ejecuta automáticamente con `npx`, no requiere instalación global)
-- Para ejecutar en Android:
-  - [Android Studio](https://developer.android.com/studio) con un emulador configurado, o un dispositivo Android físico con depuración USB habilitada
-  - JDK 17
-- Para ejecutar en iOS (solo macOS):
-  - Xcode y un simulador de iOS, o un dispositivo físico
-- Alternativamente, la app [Expo Go](https://expo.dev/go) instalada en tu teléfono para probar rápidamente sin compilar de forma nativa
+- [Node.js](https://nodejs.org/) 20 o superior y npm
+- JDK 21
+- Para Android: [Android Studio](https://developer.android.com/studio) (SDK y herramientas de línea de comandos) o un dispositivo físico con depuración USB habilitada
+- Para iOS (solo macOS): Xcode y un simulador o dispositivo físico
 
 ## Instalación
 
-1. Clona el repositorio:
-   ```bash
-   git clone <url-del-repositorio>
-   cd FirmaLock
-   ```
-
-2. Instala las dependencias:
-   ```bash
-   npm install
-   ```
-
-## Ejecución en desarrollo
-
-Inicia el servidor de desarrollo de Expo:
-
 ```bash
-npm start
+git clone <url-del-repositorio>
+cd FirmaLock
+npm install
 ```
 
-Desde ahí puedes:
-- Presionar `a` para abrir en un emulador/dispositivo Android
-- Presionar `i` para abrir en un simulador/dispositivo iOS (solo macOS)
-- Escanear el código QR con la app **Expo Go** en tu teléfono
-
-También puedes usar directamente:
+## Generar el proyecto nativo de Android
 
 ```bash
-npm run android   # Ejecutar en Android
-npm run ios        # Ejecutar en iOS
-npm run web        # Ejecutar en navegador
+npx expo prebuild -p android
 ```
 
-## Generar APK / build nativo de Android
+Si el `prebuild` sobrescribe la configuración de Gradle, añade en `android/settings.gradle`, dentro del bloque `plugins { }`:
 
-El proyecto ya incluye la carpeta `android/` con el proyecto nativo generado. Para compilar un APK/AAB:
+```
+id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+```
+
+Si aparece un error de "restricted method" o de toolchain de Java:
 
 ```bash
 cd android
-./gradlew assembleDebug       # Genera un APK de depuración
-# o
-./gradlew assembleRelease     # Genera un APK de producción
+./gradlew.bat updateDaemonJvm --jvm-version 21
+cd ..
 ```
 
-El APK resultante se encuentra en `android/app/build/outputs/apk/`.
+## Ejecución en desarrollo
 
-## Funcionalidades principales
+```bash
+npm start          # inicia el servidor de Expo
+npm run android     # ejecuta en Android (emulador o dispositivo conectado por USB)
+npm run ios         # ejecuta en iOS (solo macOS)
+npm run web         # ejecuta en navegador
+```
 
-- Bloqueo de la app mediante autenticación biométrica (huella / Face ID)
-- Importación y firma de documentos PDF
-- Importación y firma de documentos DOCX
-- Almacenamiento local de documentos y firmas (SQLite + almacenamiento seguro del dispositivo)
+## Estructura del código
+
+- `src/lib/biometrics.ts`, `relockGuard.ts` — autenticación biométrica y bloqueo automático de la app.
+- `src/lib/db.ts` — base de datos SQLite, tabla `documents` (pendiente/firmado).
+- `src/lib/docStorage.ts` — importa PDF/DOCX al almacenamiento privado de la app.
+- `src/lib/pdfSign.ts` — estampa la firma en el PDF con `pdf-lib`.
+- `src/lib/docxSign.ts` — agrega el bloque de firma al `.docx` editando su XML (vía `jszip`).
+- `src/lib/docxRead.ts` — extrae texto plano del `.docx` para su lectura.
+- `src/lib/pdfjsRuntime.ts` — escribe pdf.js (embebido en base64 en `src/assets/`) a disco para que el WebView lo cargue mediante `file://`.
+- `src/screens/PdfSignScreen.tsx` — visor de PDF y flujo de firma por coordenadas.
+- `src/screens/DocxSignScreen.tsx` — visor de texto y firma al final del documento.
+- `src/components/SignaturePadModal.tsx` — pizarra de firma táctil.
+
+## Limitación conocida
+
+La conversión de coordenadas del toque en el PDF (evento de clic sobre el canvas de pdf.js, convertido a coordenadas del PDF con `convertToPdfPoint`, usado luego por `pdfSign.ts` para dibujar la firma) puede requerir ajuste fino según el dispositivo. Si la firma no queda exactamente donde se tocó, revisar el offset en `pdfSign.ts` (`SIGNATURE_WIDTH_PT` / `SIGNATURE_HEIGHT_PT` y el cálculo de `x`/`y`).
 
 ## Licencia
 

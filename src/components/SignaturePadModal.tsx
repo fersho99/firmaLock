@@ -23,9 +23,19 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
   const [penColor, setPenColor] = useState(PEN_COLORS[0].value);
 
   const handlePickColor = (color: string) => {
+    // Cambiar de color mientras hay trazo dibujado reinicia el pad: la
+    // librería no permite recolorear un trazo ya hecho, así que evitamos
+    // confusión borrando y avisando en vez de mezclar colores a medias.
     padRef.current?.clearSignature();
     setPenColor(color);
   };
+
+  // Con tinta blanca, un fondo claro hace desaparecer el trazo mientras se
+  // dibuja (aunque el PNG se exporte transparente, no se vería nada en
+  // pantalla). Si se elige blanco, oscurecemos el fondo visible del pad
+  // solo para que se pueda ver lo que se está firmando.
+  const isWhitePen = penColor === "#FFFFFF";
+  const padVisibleBg = isWhitePen ? "#1A1A1A" : "#F5F5F5";
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
@@ -55,7 +65,7 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
           ))}
         </View>
 
-        <View style={styles.padWrap}>
+        <View style={[styles.padWrap, { backgroundColor: padVisibleBg }]}>
           <SignatureCanvas
             ref={padRef}
             key={penColor}
@@ -63,7 +73,10 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
             onEmpty={() => Alert.alert("Firma vacía", "Dibuja tu firma dentro del recuadro antes de continuar.")}
             autoClear={false}
             descriptionText=""
-            webStyle={signaturePadWebStyle}
+            webStyle={getSignaturePadWebStyle(padVisibleBg)}
+            // Fondo transparente: el trazo se exporta sin ningún rectángulo
+            // de color detrás, así se ve bien sobre cualquier documento sin
+            // importar si la página es clara u oscura.
             backgroundColor="transparent"
             penColor={penColor}
             minWidth={2.5}
@@ -71,6 +84,8 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
           />
         </View>
 
+        {/* Botones nativos de RN, no los del footer HTML del componente
+            (esos a veces no se ven bien dentro del WebView en un Modal). */}
         <View style={styles.actionsRow}>
           <Pressable
             style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
@@ -94,12 +109,23 @@ export default function SignaturePadModal({ visible, onCancel, onSigned }: Props
   );
 }
 
-const signaturePadWebStyle = `
-  .m-signature-pad { box-shadow: none; border: none; margin: 0; }
-  .m-signature-pad--body { border: none; }
-  .m-signature-pad--footer { display: none; margin: 0; }
-  body,html { background-color: #F5F5F5; height: 100%; }
-`;
+// Ocultamos el footer HTML propio del componente (sus botones "Clear"/"Confirm")
+// porque dentro de un WebView, en un Modal, a veces quedan recortados o
+// invisibles; los reemplazamos por los botones nativos de arriba, que llaman
+// a los mismos métodos (clearSignature / readSignature) por referencia.
+// El fondo visible del body cambia según el color de tinta (ver padVisibleBg
+// arriba): claro para tintas oscuras, oscuro para tinta blanca. Esto es solo
+// visual dentro del WebView — el PNG que se exporta sigue siendo transparente
+// (backgroundColor="transparent" en el SignatureCanvas), así que no afecta
+// cómo se ve la firma ya estampada en el documento.
+function getSignaturePadWebStyle(bgColor: string) {
+  return `
+    .m-signature-pad { box-shadow: none; border: none; margin: 0; }
+    .m-signature-pad--body { border: none; }
+    .m-signature-pad--footer { display: none; margin: 0; }
+    body,html { background-color: ${bgColor}; height: 100%; }
+  `;
+}
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: COLORS.bg, paddingHorizontal: 20 },
@@ -126,7 +152,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: COLORS.panelBorder,
-    backgroundColor: "#F5F5F5",
   },
   actionsRow: {
     flexDirection: "row",

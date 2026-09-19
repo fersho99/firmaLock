@@ -34,7 +34,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
       {unlocked ? (
         openDoc ? (
           openDoc.type === "pdf" ? (

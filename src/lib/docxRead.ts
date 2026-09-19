@@ -1,6 +1,11 @@
 import JSZip from "jszip";
 import { File } from "expo-file-system";
 
+/**
+ * Extrae el texto plano de un .docx para poder "leerlo" dentro de la app.
+ * No es una renderización fiel (sin negritas/tablas/imagenes), pero permite
+ * revisar el contenido antes de firmar sin salir de FirmaLock.
+ */
 export async function extractDocxText(docxFile: File): Promise<string[]> {
   const bytes = await docxFile.arrayBuffer();
   const zip = await JSZip.loadAsync(bytes);

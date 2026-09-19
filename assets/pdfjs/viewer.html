@@ -7,7 +7,7 @@
     html, body {
       margin: 0;
       padding: 0;
-      background: #14110D;
+      background: #F6F2FB;
       overflow: hidden;
       height: 100%;
       width: 100%;
@@ -25,23 +25,37 @@
       box-shadow: 0 0 12px rgba(0,0,0,0.5);
       touch-action: manipulation;
     }
-    #marker {
+    /* Recuadro que representa el tamaño/posición exacta donde caerá la
+       firma. Se puede arrastrar (touch-action: none evita que el scroll
+       del contenedor #wrap "robe" el gesto de arrastre). */
+    #placementBox {
       position: absolute;
-      width: 18px;
-      height: 18px;
-      margin-left: -9px;
-      margin-top: -9px;
-      border-radius: 9px;
-      border: 2px solid #E8B94A;
-      background: rgba(232, 185, 74, 0.35);
-      pointer-events: none;
       display: none;
+      border: 2px dashed #7C3AED;
+      background: rgba(124, 58, 237, 0.12);
+      border-radius: 6px;
+      touch-action: none;
+      cursor: move;
+    }
+    #placementBox::after {
+      content: 'Arrastra para ajustar';
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      margin-bottom: 4px;
+      font-family: sans-serif;
+      font-size: 10px;
+      color: #7C3AED;
+      background: rgba(255,255,255,0.9);
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
     }
     #status {
       position: fixed;
       top: 8px;
       left: 8px;
-      color: #7C8A80;
+      color: #7A6E8C;
       font-family: sans-serif;
       font-size: 11px;
     }
@@ -52,10 +66,12 @@
   <div id="wrap">
     <canvas id="pageCanvas"></canvas>
   </div>
-  <div id="marker"></div>
+  <div id="placementBox"></div>
 
   <script src="pdf.min.js"></script>
   <script>
+    // Puente RN <-> WebView. Android entrega mensajes por 'message' en
+    // document, iOS/algunos casos por 'message' en window; escuchamos ambos.
     function onRNMessage(handler) {
       document.addEventListener('message', handler);
       window.addEventListener('message', handler);
@@ -68,19 +84,82 @@
 
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
 
+    // Deben coincidir con SIGNATURE_WIDTH_PT / SIGNATURE_HEIGHT_PT en
+    // src/lib/pdfSign.ts, para que el recuadro que se ve aquí sea del mismo
+    // tamaño que la imagen que realmente se estampa en el PDF.
+    var SIGNATURE_WIDTH_PT = 150;
+    var SIGNATURE_HEIGHT_PT = 60;
+
     var pdfDoc = null;
     var currentPageNum = 1;
     var currentViewport = null;
     var canvas = document.getElementById('pageCanvas');
     var ctx = canvas.getContext('2d');
-    var marker = document.getElementById('marker');
+    var box = document.getElementById('placementBox');
     var statusEl = document.getElementById('status');
+
+    // Posición del recuadro en coordenadas de pantalla (client px). Se
+    // guarda como el punto "inferior-centro" (donde tocaste), igual que
+    // antes usaba el marcador, para que al confirmar el ancla siga siendo
+    // consistente con cómo pdfSign.ts centra la imagen horizontalmente y la
+    // hace crecer hacia arriba desde el punto tocado.
+    var boxAnchorX = 0;
+    var boxAnchorY = 0;
+    var boxWidthPx = 0;
+    var boxHeightPx = 0;
+    var dragging = false;
+    var dragOffsetX = 0;
+    var dragOffsetY = 0;
 
     function base64ToUint8Array(base64) {
       var raw = atob(base64);
       var arr = new Uint8Array(raw.length);
       for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
       return arr;
+    }
+
+    function hideBox() {
+      box.style.display = 'none';
+    }
+
+    function updateBoxStyle() {
+      box.style.width = boxWidthPx + 'px';
+      box.style.height = boxHeightPx + 'px';
+      box.style.left = (boxAnchorX - boxWidthPx / 2) + 'px';
+      box.style.top = (boxAnchorY - boxHeightPx) + 'px';
+    }
+
+    // Convierte el ancla actual del recuadro (pantalla) a coordenadas PDF y
+    // lo manda a RN. Se llama al tocar por primera vez y en cada paso del
+    // arrastre, así RN siempre tiene la posición más reciente lista para
+    // cuando el usuario presione "Firmar aquí".
+    function reportBoxPosition() {
+      if (!currentViewport) return;
+      var rect = canvas.getBoundingClientRect();
+      var cx = (boxAnchorX - rect.left) * (canvas.width / rect.width);
+      var cy = (boxAnchorY - rect.top) * (canvas.height / rect.height);
+      var pdfPoint = currentViewport.convertToPdfPoint(cx, cy);
+      postToRN({
+        type: 'tap',
+        page: currentPageNum,
+        pdfX: pdfPoint[0],
+        pdfY: pdfPoint[1],
+        pageWidthPt: currentViewport.width / currentViewport.scale,
+        pageHeightPt: currentViewport.height / currentViewport.scale,
+      });
+    }
+
+    function placeBoxAt(clientX, clientY) {
+      if (!currentViewport) return;
+      var rect = canvas.getBoundingClientRect();
+      var pxPerCanvasPx = rect.width / canvas.width;
+      boxWidthPx = SIGNATURE_WIDTH_PT * currentViewport.scale * pxPerCanvasPx;
+      boxHeightPx = SIGNATURE_HEIGHT_PT * currentViewport.scale * pxPerCanvasPx;
+      boxAnchorX = clientX;
+      boxAnchorY = clientY;
+      updateBoxStyle();
+      box.style.display = 'block';
+      reportBoxPosition();
     }
 
     function renderPage(num) {
@@ -97,7 +176,7 @@
         var renderContext = { canvasContext: ctx, viewport: viewport };
         page.render(renderContext).promise.then(function () {
           statusEl.textContent = 'Página ' + num + ' / ' + pdfDoc.numPages;
-          marker.style.display = 'none';
+          hideBox();
           postToRN({ type: 'pageRendered', page: num, numPages: pdfDoc.numPages });
         });
       });
@@ -105,6 +184,7 @@
 
     function loadDocument(base64, gotoPage) {
       statusEl.textContent = 'Cargando…';
+      hideBox();
       var data = base64ToUint8Array(base64);
       window.pdfjsLib.getDocument({ data: data }).promise.then(function (pdf) {
         pdfDoc = pdf;
@@ -117,24 +197,29 @@
 
     canvas.addEventListener('click', function (evt) {
       if (!currentViewport) return;
-      var rect = canvas.getBoundingClientRect();
-      var x = (evt.clientX - rect.left) * (canvas.width / rect.width);
-      var y = (evt.clientY - rect.top) * (canvas.height / rect.height);
-
-      marker.style.display = 'block';
-      marker.style.left = evt.clientX + 'px';
-      marker.style.top = evt.clientY + 'px';
-
-      var pdfPoint = currentViewport.convertToPdfPoint(x, y);
-      postToRN({
-        type: 'tap',
-        page: currentPageNum,
-        pdfX: pdfPoint[0],
-        pdfY: pdfPoint[1],
-        pageWidthPt: currentViewport.width / currentViewport.scale,
-        pageHeightPt: currentViewport.height / currentViewport.scale,
-      });
+      placeBoxAt(evt.clientX, evt.clientY);
     });
+
+    box.addEventListener('pointerdown', function (evt) {
+      dragging = true;
+      dragOffsetX = evt.clientX - boxAnchorX;
+      dragOffsetY = evt.clientY - boxAnchorY;
+      try { box.setPointerCapture(evt.pointerId); } catch (e) {}
+      evt.preventDefault();
+    });
+    box.addEventListener('pointermove', function (evt) {
+      if (!dragging) return;
+      boxAnchorX = evt.clientX - dragOffsetX;
+      boxAnchorY = evt.clientY - dragOffsetY;
+      updateBoxStyle();
+      reportBoxPosition();
+      evt.preventDefault();
+    });
+    function endDrag() {
+      dragging = false;
+    }
+    box.addEventListener('pointerup', endDrag);
+    box.addEventListener('pointercancel', endDrag);
 
     onRNMessage(function (evt) {
       try {
@@ -143,6 +228,8 @@
           loadDocument(msg.base64, msg.page);
         } else if (msg.type === 'goToPage') {
           renderPage(msg.page);
+        } else if (msg.type === 'hideBox') {
+          hideBox();
         }
       } catch (e) {
         postToRN({ type: 'error', message: String(e) });

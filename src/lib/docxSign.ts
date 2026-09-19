@@ -6,6 +6,15 @@ const EMU_PER_INCH = 914400;
 const SIGNATURE_WIDTH_IN = 2.2;
 const SIGNATURE_HEIGHT_IN = 0.9;
 
+/**
+ * A diferencia del PDF (donde se puede colocar la firma en un punto exacto
+ * de la página gracias a pdf.js + pdf-lib), editar un .docx a nivel de
+ * posición libre requeriría un motor de layout completo. Por alcance de
+ * este proyecto, la firma de un .docx se agrega como un bloque de cierre al
+ * final del documento (imagen de la firma + "Firmado por / fecha"),
+ * manipulando directamente el XML del paquete OOXML (word/document.xml)
+ * dentro del .docx, que en el fondo es un .zip.
+ */
 export async function appendSignatureToDocx(
   docxFile: File,
   signaturePngBase64: string,
@@ -22,11 +31,13 @@ export async function appendSignatureToDocx(
   const relsXml = await requireText(zip, relsPath);
   const contentTypesXml = await requireText(zip, contentTypesPath);
 
+  // 1) Agrega la imagen PNG de la firma al paquete.
   const pngBytes = toByteArray(
     signaturePngBase64.replace(/^data:image\/png;base64,/, "")
   );
   zip.file("word/media/firmalock_signature.png", pngBytes);
 
+  // 2) Registra la relación imagen -> id, evitando colisionar con ids existentes.
   const usedIds = Array.from(relsXml.matchAll(/Id="rId(\d+)"/g)).map((m) =>
     parseInt(m[1], 10)
   );
@@ -39,6 +50,7 @@ export async function appendSignatureToDocx(
   );
   zip.file(relsPath, updatedRelsXml);
 
+  // 3) Asegura que [Content_Types].xml declare la extensión png.
   let updatedContentTypesXml = contentTypesXml;
   if (!/Extension="png"/i.test(contentTypesXml)) {
     updatedContentTypesXml = contentTypesXml.replace(
@@ -48,6 +60,9 @@ export async function appendSignatureToDocx(
   }
   zip.file(contentTypesPath, updatedContentTypesXml);
 
+  // 4) Construye el bloque XML (imagen + texto) e insértalo justo antes de
+  // <w:sectPr> (el cierre de sección debe seguir siendo el último hijo del
+  // body para que el documento siga siendo válido).
   const cx = Math.round(SIGNATURE_WIDTH_IN * EMU_PER_INCH);
   const cy = Math.round(SIGNATURE_HEIGHT_IN * EMU_PER_INCH);
   const dateLabel = new Date().toLocaleString();
